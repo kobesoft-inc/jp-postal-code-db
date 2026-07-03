@@ -77,6 +77,24 @@ WHERE p.zip_code = '1000001';
 （括弧を使わない）ケースは、範囲表記ではなく実在の地名の可能性があるため正規化の対象外とし、
 CSVの値をそのまま town に格納しています。
 
+## 自動更新（GitHub Actions）
+
+`.github/workflows/update-db.yml` により、毎月1日 09:00 JST（`cron: "0 0 1 * *"` UTC）に
+自動で `build_db.py` を実行し、最新の `jp_postal_code.db` を生成してリポジトリに
+コミット・pushします。差分が無い月はコミットしません。
+
+`workflow_dispatch` にも対応しているため、GitHubのActionsタブから手動実行も可能です。
+
+補足:
+
+- 生成したDBファイル本体（約8MB）をリポジトリにそのままコミットしていくため、
+  毎月の更新分だけリポジトリのサイズが増えていきます。サイズが問題になる場合は
+  GitHub Releasesへのアップロード方式への切り替えを検討してください。
+- ワークフローが `contents: write` 権限でpushするため、リポジトリの
+  Settings > Actions > General > Workflow permissions が「Read and write」に
+  なっている必要があります（ワークフロー内で明示指定しているため、通常は
+  リポジトリ側の初期設定が read-only でも上書きされます）。
+
 ## ライセンス
 
 このリポジトリのコードは MIT License です。

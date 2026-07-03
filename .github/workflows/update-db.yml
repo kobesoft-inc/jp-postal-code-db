@@ -1,0 +1,37 @@
+name: Update postal code database
+
+on:
+  schedule:
+    # 毎月1日 00:00 UTC (= 09:00 JST)
+    - cron: "0 0 1 * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  update-db:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build database
+        run: python3 build_db.py -o jp_postal_code.db
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- jp_postal_code.db; then
+            echo "No changes to jp_postal_code.db"
+            exit 0
+          fi
+          git add jp_postal_code.db
+          git commit -m "Update jp_postal_code.db ($(date -u +'%Y-%m-%d'))"
+          git push

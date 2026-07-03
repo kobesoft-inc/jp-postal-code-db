@@ -24,14 +24,19 @@ jobs:
       - name: Check source data for changes
         id: check
         run: |
-          NEW_MD5="$(python3 check_source_md5.py)"
-          OLD_MD5="$(cat ken_all.csv.md5 2>/dev/null || true)"
-          echo "new_md5=$NEW_MD5" >> "$GITHUB_OUTPUT"
-          if [ "$NEW_MD5" = "$OLD_MD5" ]; then
-            echo "元データのMD5に変化なし: $NEW_MD5"
+          NEW_KEN_ALL_MD5="$(python3 check_source_md5.py --source ken_all)"
+          NEW_JIGYOSYO_MD5="$(python3 check_source_md5.py --source jigyosyo)"
+          OLD_KEN_ALL_MD5="$(cat ken_all.csv.md5 2>/dev/null || true)"
+          OLD_JIGYOSYO_MD5="$(cat jigyosyo.csv.md5 2>/dev/null || true)"
+
+          echo "new_ken_all_md5=$NEW_KEN_ALL_MD5" >> "$GITHUB_OUTPUT"
+          echo "new_jigyosyo_md5=$NEW_JIGYOSYO_MD5" >> "$GITHUB_OUTPUT"
+
+          if [ "$NEW_KEN_ALL_MD5" = "$OLD_KEN_ALL_MD5" ] && [ "$NEW_JIGYOSYO_MD5" = "$OLD_JIGYOSYO_MD5" ]; then
+            echo "元データのMD5に変化なし"
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "元データのMD5が変化: $OLD_MD5 -> $NEW_MD5"
+            echo "元データのMD5が変化: KEN_ALL $OLD_KEN_ALL_MD5 -> $NEW_KEN_ALL_MD5 / JIGYOSYO $OLD_JIGYOSYO_MD5 -> $NEW_JIGYOSYO_MD5"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -39,23 +44,26 @@ jobs:
         if: steps.check.outputs.changed == 'true'
         run: python3 build_db.py -o jp_postal_code.db
 
-      - name: Commit checksum
+      - name: Commit checksums
         if: steps.check.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          echo "${{ steps.check.outputs.new_md5 }}" > ken_all.csv.md5
-          git add ken_all.csv.md5
-          git commit -m "Update ken_all.csv.md5 ($(date -u +'%Y-%m-%d'))"
+          echo "${{ steps.check.outputs.new_ken_all_md5 }}" > ken_all.csv.md5
+          echo "${{ steps.check.outputs.new_jigyosyo_md5 }}" > jigyosyo.csv.md5
+          git add ken_all.csv.md5 jigyosyo.csv.md5
+          git commit -m "Update source checksums ($(date -u +'%Y-%m-%d'))"
           git push
 
       - name: Create GitHub Release
         if: steps.check.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          NEW_MD5: ${{ steps.check.outputs.new_md5 }}
+          NEW_KEN_ALL_MD5: ${{ steps.check.outputs.new_ken_all_md5 }}
+          NEW_JIGYOSYO_MD5: ${{ steps.check.outputs.new_jigyosyo_md5 }}
         run: |
-          TAG="db-$(date -u +'%Y-%m-%d')-${NEW_MD5:0:8}"
+          TAG="db-$(date -u +'%Y-%m-%d')-${NEW_KEN_ALL_MD5:0:8}-${NEW_JIGYOSYO_MD5:0:8}"
           gh release create "$TAG" jp_postal_code.db \
             --title "郵便番号データ $(date -u +'%Y-%m-%d')" \
-            --notes "KEN_ALL CSV MD5: ${NEW_MD5}"
+            --notes "KEN_ALL CSV MD5: ${NEW_KEN_ALL_MD5}
+JIGYOSYO CSV MD5: ${NEW_JIGYOSYO_MD5}"

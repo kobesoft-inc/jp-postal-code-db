@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""日本郵便のKEN_ALL(郵便番号)データをダウンロードし、SQLite3データベースを生成する。
+"""日本郵便の郵便番号データをダウンロードし、SQLite3データベースを生成する。
 
-生データの列構成をそのまま持つのではなく、以下の3テーブルに正規化する。
+KEN_ALL(住所の郵便番号)とJIGYOSYO(大口事業所個別番号)の2つのデータソースを
+生データの列構成のまま持つのではなく、以下の4テーブルに正規化する。
 
-- prefectures   : 都道府県コード -> 都道府県名
-- cities        : 市区町村コード -> 市区町村名
-- postal_codes  : 郵便番号 -> 都道府県コード, 市区町村コード, 町名(住所続き)
+- prefectures      : 都道府県コード -> 都道府県名
+- cities           : 市区町村コード -> 市区町村名
+- postal_codes     : 郵便番号 -> 都道府県コード, 市区町村コード, 町名(住所続き)
+- business_offices : 郵便番号(大口事業所個別番号) -> 都道府県コード, 市区町村コード, 町名, 事業所名
 
-町名はアプリケーションからそのまま住所文字列に使えるよう、以下の正規化を行う。
+町名はアプリケーションからそのまま住所文字列に使えるよう、以下の正規化を行う
+（postal_codesのみ。business_officesの町名は個々の事業所固有の住所のため範囲表記が無く、正規化不要）。
 
 - 「以下に掲載がない場合」「〇〇の次に番地がくる場合」のような、町名が存在しない
   ことを表す自然言語の記述は空文字列に変換する。
@@ -25,6 +28,7 @@ import urllib.request
 import zipfile
 
 KEN_ALL_URL = "https://www.post.japanpost.jp/service/search/zipcode/download/utf/zip/utf_ken_all.zip"
+JIGYOSYO_URL = "https://www.post.japanpost.jp/service/search/zipcode/download/office/zip/jigyosyo.zip"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS prefectures (
@@ -49,6 +53,17 @@ CREATE TABLE IF NOT EXISTS postal_codes (
 );
 CREATE INDEX IF NOT EXISTS idx_postal_codes_zip_code ON postal_codes (zip_code);
 CREATE INDEX IF NOT EXISTS idx_postal_codes_city_code ON postal_codes (city_code);
+
+CREATE TABLE IF NOT EXISTS business_offices (
+    zip_code  TEXT NOT NULL,
+    pref_code TEXT NOT NULL REFERENCES prefectures (pref_code),
+    city_code TEXT NOT NULL REFERENCES cities (city_code),
+    town      TEXT NOT NULL,
+    name      TEXT NOT NULL,
+    name_kana TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_business_offices_zip_code ON business_offices (zip_code);
+CREATE INDEX IF NOT EXISTS idx_business_offices_city_code ON business_offices (city_code);
 """
 
 # 町名が存在しないことを表す自然言語の記述（KEN_ALLの慣習表記）
@@ -70,26 +85,31 @@ def clean_town(raw_town):
     return town
 
 
-def fetch_csv_text(url):
+def fetch_csv_text(url, encoding="utf-8"):
     with urllib.request.urlopen(url) as res:
         data = res.read()
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         csv_name = next(name for name in zf.namelist() if name.lower().endswith(".csv"))
         with zf.open(csv_name) as f:
-            return f.read().decode("utf-8")
+            return f.read().decode(encoding)
 
 
-def fetch_csv_rows(url):
-    yield from csv.reader(io.StringIO(fetch_csv_text(url)))
+def fetch_csv_rows(url, encoding="utf-8"):
+    yield from csv.reader(io.StringIO(fetch_csv_text(url, encoding)))
 
 
-def build_database(db_path, url):
+# JIGYOSYO.CSVの修正コード（12列目）: 「5」は廃止された個別番号を表す
+JIGYOSYO_ABOLISHED_CODE = "5"
+
+
+def build_database(db_path, ken_all_url, jigyosyo_url):
     prefectures = {}
     cities = {}
     postal_codes = []
     seen_postal_codes = set()
+    business_offices = []
 
-    for row in fetch_csv_rows(url):
+    for row in fetch_csv_rows(ken_all_url):
         jis_code = row[0]
         zip_code = row[2]
         pref_kana, city_kana = row[3], row[4]
@@ -106,9 +126,27 @@ def build_database(db_path, url):
         seen_postal_codes.add(key)
         postal_codes.append((zip_code, pref_code, city_code, town))
 
+    for row in fetch_csv_rows(jigyosyo_url, encoding="cp932"):
+        if row[12] == JIGYOSYO_ABOLISHED_CODE:
+            continue
+
+        jis_code = row[0]
+        name_kana, name = row[1], row[2]
+        pref_name, city_name, town = row[3], row[4], row[5]
+        zip_code = row[7]
+        pref_code, city_code = jis_code[:2], jis_code
+
+        # JIGYOSYOには都道府県名・市区町村名のカナが無いため、KEN_ALLに無い
+        # コードが例外的に出てきた場合のみ漢字表記をカナ代わりに補う
+        prefectures.setdefault(pref_code, (pref_name, pref_name))
+        cities.setdefault(city_code, (pref_code, city_name, city_name))
+
+        business_offices.append((zip_code, pref_code, city_code, town.strip(), name.strip(), name_kana.strip()))
+
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(SCHEMA)
+        conn.execute("DELETE FROM business_offices")
         conn.execute("DELETE FROM postal_codes")
         conn.execute("DELETE FROM cities")
         conn.execute("DELETE FROM prefectures")
@@ -125,12 +163,18 @@ def build_database(db_path, url):
             "INSERT INTO postal_codes (zip_code, pref_code, city_code, town) VALUES (?, ?, ?, ?)",
             postal_codes,
         )
+        conn.executemany(
+            "INSERT INTO business_offices (zip_code, pref_code, city_code, town, name, name_kana) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            business_offices,
+        )
         conn.commit()
 
         print(
             f"prefectures: {len(prefectures)} 件, "
             f"cities: {len(cities)} 件, "
-            f"postal_codes: {len(postal_codes)} 件 を {db_path} に書き込みました。",
+            f"postal_codes: {len(postal_codes)} 件, "
+            f"business_offices: {len(business_offices)} 件 を {db_path} に書き込みました。",
             file=sys.stderr,
         )
     finally:
@@ -141,8 +185,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-o", "--output", default="jp_postal_code.db", help="出力先のSQLite3ファイルパス")
     parser.add_argument("--url", default=KEN_ALL_URL, help="KEN_ALL CSV(zip)のダウンロードURL")
+    parser.add_argument("--jigyosyo-url", default=JIGYOSYO_URL, help="JIGYOSYO CSV(zip)のダウンロードURL")
     args = parser.parse_args()
-    build_database(args.output, args.url)
+    build_database(args.output, args.url, args.jigyosyo_url)
 
 
 if __name__ == "__main__":

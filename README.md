@@ -78,7 +78,7 @@ WHERE p.zip_code = '1000001';
 （括弧を使わない）ケースは、範囲表記ではなく実在の地名の可能性があるため正規化の対象外とし、
 CSVの値をそのまま town に格納しています。
 
-#### business_offices（大口事業所個別番号）
+#### offices（大口事業所個別番号）
 
 配達物数の多い事業所・私書箱利用者に割り当てられる個別の郵便番号（JIGYOSYO）です。
 1つの建物・組織に複数の郵便番号が割り当てられることもあれば、逆に同じ郵便番号を
@@ -99,7 +99,7 @@ CSVの値をそのまま town に格納しています。
 
 ```sql
 SELECT pr.name AS pref, c.name AS city, b.town, b.name
-FROM business_offices b
+FROM offices b
 JOIN prefectures pr ON pr.pref_code = b.pref_code
 JOIN cities c ON c.city_code = b.city_code
 WHERE b.zip_code = '1008798';

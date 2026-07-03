@@ -7,10 +7,10 @@ KEN_ALL(住所の郵便番号)とJIGYOSYO(大口事業所個別番号)の2つの
 - prefectures      : 都道府県コード -> 都道府県名
 - cities           : 市区町村コード -> 市区町村名
 - postal_codes     : 郵便番号 -> 都道府県コード, 市区町村コード, 町名(住所続き)
-- business_offices : 郵便番号(大口事業所個別番号) -> 都道府県コード, 市区町村コード, 町名, 事業所名
+- offices : 郵便番号(大口事業所個別番号) -> 都道府県コード, 市区町村コード, 町名, 事業所名
 
 町名はアプリケーションからそのまま住所文字列に使えるよう、以下の正規化を行う
-（postal_codesのみ。business_officesの町名は個々の事業所固有の住所のため範囲表記が無く、正規化不要）。
+（postal_codesのみ。officesの町名は個々の事業所固有の住所のため範囲表記が無く、正規化不要）。
 
 - 「以下に掲載がない場合」「〇〇の次に番地がくる場合」のような、町名が存在しない
   ことを表す自然言語の記述は空文字列に変換する。
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS postal_codes (
 CREATE INDEX IF NOT EXISTS idx_postal_codes_zip_code ON postal_codes (zip_code);
 CREATE INDEX IF NOT EXISTS idx_postal_codes_city_code ON postal_codes (city_code);
 
-CREATE TABLE IF NOT EXISTS business_offices (
+CREATE TABLE IF NOT EXISTS offices (
     zip_code  TEXT NOT NULL,
     pref_code TEXT NOT NULL REFERENCES prefectures (pref_code),
     city_code TEXT NOT NULL REFERENCES cities (city_code),
@@ -62,8 +62,8 @@ CREATE TABLE IF NOT EXISTS business_offices (
     name      TEXT NOT NULL,
     name_kana TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_business_offices_zip_code ON business_offices (zip_code);
-CREATE INDEX IF NOT EXISTS idx_business_offices_city_code ON business_offices (city_code);
+CREATE INDEX IF NOT EXISTS idx_offices_zip_code ON offices (zip_code);
+CREATE INDEX IF NOT EXISTS idx_offices_city_code ON offices (city_code);
 """
 
 # 町名が存在しないことを表す自然言語の記述（KEN_ALLの慣習表記）
@@ -107,7 +107,7 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
     cities = {}
     postal_codes = []
     seen_postal_codes = set()
-    business_offices = []
+    offices = []
 
     for row in fetch_csv_rows(ken_all_url):
         jis_code = row[0]
@@ -141,12 +141,12 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
         prefectures.setdefault(pref_code, (pref_name, pref_name))
         cities.setdefault(city_code, (pref_code, city_name, city_name))
 
-        business_offices.append((zip_code, pref_code, city_code, town.strip(), name.strip(), name_kana.strip()))
+        offices.append((zip_code, pref_code, city_code, town.strip(), name.strip(), name_kana.strip()))
 
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(SCHEMA)
-        conn.execute("DELETE FROM business_offices")
+        conn.execute("DELETE FROM offices")
         conn.execute("DELETE FROM postal_codes")
         conn.execute("DELETE FROM cities")
         conn.execute("DELETE FROM prefectures")
@@ -164,9 +164,9 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
             postal_codes,
         )
         conn.executemany(
-            "INSERT INTO business_offices (zip_code, pref_code, city_code, town, name, name_kana) "
+            "INSERT INTO offices (zip_code, pref_code, city_code, town, name, name_kana) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            business_offices,
+            offices,
         )
         conn.commit()
 
@@ -174,7 +174,7 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
             f"prefectures: {len(prefectures)} 件, "
             f"cities: {len(cities)} 件, "
             f"postal_codes: {len(postal_codes)} 件, "
-            f"business_offices: {len(business_offices)} 件 を {db_path} に書き込みました。",
+            f"offices: {len(offices)} 件 を {db_path} に書き込みました。",
             file=sys.stderr,
         )
     finally:

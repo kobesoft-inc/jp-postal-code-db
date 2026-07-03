@@ -79,18 +79,31 @@ CSVの値をそのまま town に格納しています。
 
 ## 自動更新（GitHub Actions）
 
-`.github/workflows/update-db.yml` により、毎月1日 09:00 JST（`cron: "0 0 1 * *"` UTC）に
-自動で `build_db.py` を実行し、最新の `jp_postal_code.db` を生成してリポジトリに
-コミット・pushします。差分が無い月はコミットしません。
+`.github/workflows/update-db.yml` により、毎週月曜 09:00 JST（`cron: "0 0 * * 1"` UTC）に
+以下を自動実行します。`workflow_dispatch` にも対応しているため、GitHubのActionsタブから
+手動実行も可能です。
 
-`workflow_dispatch` にも対応しているため、GitHubのActionsタブから手動実行も可能です。
+1. `check_source_md5.py` で日本郵便のKEN_ALL CSV本文のMD5を計算し、リポジトリ内の
+   `ken_all.csv.md5` に記録済みの値と比較する。
+2. MD5が変化していなければ、そこで終了（DB生成・リリースは行わない）。
+3. MD5が変化していれば `build_db.py` でDBを再生成し、
+   [GitHub Releases](https://github.com/kobesoft-inc/jp-postal-code-sqlite3/releases) に
+   `jp_postal_code.db` を添付した新しいリリースを作成する（タグ名は `db-YYYY-MM-DD-<MD5先頭8桁>`）。
+   `ken_all.csv.md5` の更新もリポジトリにコミットする。
+
+DBファイル自体はリポジトリにはコミットせず、常にReleasesの最新版から取得する運用です
+（`git`の履歴が肥大化しないための設計）。最新版は次のURLから取得できます。
+
+```
+https://github.com/kobesoft-inc/jp-postal-code-sqlite3/releases/latest/download/jp_postal_code.db
+```
 
 補足:
 
-- 生成したDBファイル本体（約8MB）をリポジトリにそのままコミットしていくため、
-  毎月の更新分だけリポジトリのサイズが増えていきます。サイズが問題になる場合は
-  GitHub Releasesへのアップロード方式への切り替えを検討してください。
-- ワークフローが `contents: write` 権限でpushするため、リポジトリの
+- CSVの中身ではなく zip ファイル自体のMD5を使うと、zip内部のタイムスタンプ等の
+  メタデータの違いだけで「更新あり」と誤検知する可能性があるため、
+  zipを展開したCSV本文のMD5で比較しています。
+- ワークフローが `contents: write` 権限でpush・リリース作成を行うため、リポジトリの
   Settings > Actions > General > Workflow permissions が「Read and write」に
   なっている必要があります（ワークフロー内で明示指定しているため、通常は
   リポジトリ側の初期設定が read-only でも上書きされます）。

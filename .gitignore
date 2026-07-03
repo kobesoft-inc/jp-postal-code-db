@@ -1,5 +1,4 @@
 *.db
-!jp_postal_code.db
 *.csv
 *.zip
 __pycache__/

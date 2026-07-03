@@ -70,14 +70,17 @@ def clean_town(raw_town):
     return town
 
 
-def fetch_csv_rows(url):
+def fetch_csv_text(url):
     with urllib.request.urlopen(url) as res:
         data = res.read()
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         csv_name = next(name for name in zf.namelist() if name.lower().endswith(".csv"))
         with zf.open(csv_name) as f:
-            text = io.TextIOWrapper(f, encoding="utf-8")
-            yield from csv.reader(text)
+            return f.read().decode("utf-8")
+
+
+def fetch_csv_rows(url):
+    yield from csv.reader(io.StringIO(fetch_csv_text(url)))
 
 
 def build_database(db_path, url):

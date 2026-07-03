@@ -2,8 +2,8 @@ name: Update postal code database
 
 on:
   schedule:
-    # 毎月1日 00:00 UTC (= 09:00 JST)
-    - cron: "0 0 1 * *"
+    # 毎週月曜 00:00 UTC (= 09:00 JST)
+    - cron: "0 0 * * 1"
   workflow_dispatch: {}
 
 permissions:
@@ -21,17 +21,41 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Check source data for changes
+        id: check
+        run: |
+          NEW_MD5="$(python3 check_source_md5.py)"
+          OLD_MD5="$(cat ken_all.csv.md5 2>/dev/null || true)"
+          echo "new_md5=$NEW_MD5" >> "$GITHUB_OUTPUT"
+          if [ "$NEW_MD5" = "$OLD_MD5" ]; then
+            echo "元データのMD5に変化なし: $NEW_MD5"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "元データのMD5が変化: $OLD_MD5 -> $NEW_MD5"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build database
+        if: steps.check.outputs.changed == 'true'
         run: python3 build_db.py -o jp_postal_code.db
 
-      - name: Commit and push if changed
+      - name: Commit checksum
+        if: steps.check.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- jp_postal_code.db; then
-            echo "No changes to jp_postal_code.db"
-            exit 0
-          fi
-          git add jp_postal_code.db
-          git commit -m "Update jp_postal_code.db ($(date -u +'%Y-%m-%d'))"
+          echo "${{ steps.check.outputs.new_md5 }}" > ken_all.csv.md5
+          git add ken_all.csv.md5
+          git commit -m "Update ken_all.csv.md5 ($(date -u +'%Y-%m-%d'))"
           git push
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_MD5: ${{ steps.check.outputs.new_md5 }}
+        run: |
+          TAG="db-$(date -u +'%Y-%m-%d')-${NEW_MD5:0:8}"
+          gh release create "$TAG" jp_postal_code.db \
+            --title "郵便番号データ $(date -u +'%Y-%m-%d')" \
+            --notes "KEN_ALL CSV MD5: ${NEW_MD5}"

@@ -56,6 +56,7 @@ jobs:
           git push
 
       - name: Create GitHub Release
+        id: release
         if: steps.check.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -67,3 +68,17 @@ jobs:
           gh release create "$TAG" jp_postal_code.db \
             --title "郵便番号データ $(date -u +'%Y-%m-%d')" \
             --notes "$NOTES"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Delete old releases (keep latest only)
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          for TAG in $(gh release list --repo "$GITHUB_REPOSITORY" --json tagName -q '.[].tagName'); do
+            if [ "$TAG" != "$CURRENT_TAG" ]; then
+              echo "古いリリースを削除: $TAG"
+              gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+            fi
+          done

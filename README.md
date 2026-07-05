@@ -28,7 +28,7 @@ curl -L -o jp_postal_code.db \
 
 | カラム | 内容 |
 | --- | --- |
-| pref_code | 都道府県コード（2桁、例: `13`） |
+| prefecture_code | 都道府県コード（2桁、例: `13`） |
 | name | 都道府県名（例: 東京都） |
 | name_kana | 都道府県名カナ |
 
@@ -37,7 +37,7 @@ curl -L -o jp_postal_code.db \
 | カラム | 内容 |
 | --- | --- |
 | city_code | 市区町村コード（5桁 = 都道府県コード2桁 + 市区町村コード3桁。例: `13101`） |
-| pref_code | 都道府県コード（`prefectures.pref_code` を参照） |
+| prefecture_code | 都道府県コード（`prefectures.prefecture_code` を参照） |
 | name | 市区町村名（例: 千代田区） |
 | name_kana | 市区町村名カナ |
 
@@ -46,7 +46,7 @@ curl -L -o jp_postal_code.db \
 | カラム | 内容 |
 | --- | --- |
 | zip_code | 郵便番号（7桁、ハイフンなし） |
-| pref_code | 都道府県コード（`prefectures.pref_code` を参照） |
+| prefecture_code | 都道府県コード（`prefectures.prefecture_code` を参照） |
 | city_code | 市区町村コード（`cities.city_code` を参照） |
 | town | 町名・住所続き（正規化済み。町名が存在しない場合は空文字列） |
 
@@ -55,7 +55,7 @@ curl -L -o jp_postal_code.db \
 ```sql
 SELECT pr.name AS pref, c.name AS city, p.town
 FROM postal_codes p
-JOIN prefectures pr ON pr.pref_code = p.pref_code
+JOIN prefectures pr ON pr.prefecture_code = p.prefecture_code
 JOIN cities c ON c.city_code = p.city_code
 WHERE p.zip_code = '1000001';
 -- 東京都 千代田区 千代田
@@ -78,25 +78,25 @@ WHERE p.zip_code = '1000001';
 | カラム | 内容 |
 | --- | --- |
 | zip_code | 郵便番号（7桁、ハイフンなし。同じ番号が複数行に出てくることがある） |
-| pref_code | 都道府県コード（`prefectures.pref_code` を参照） |
+| prefecture_code | 都道府県コード（`prefectures.prefecture_code` を参照） |
 | city_code | 市区町村コード（`cities.city_code` を参照） |
 | town | 町名（`postal_codes`と違い個別の実住所のため範囲表記は無く、正規化していない） |
 | detail | 町名に続く詳細住所（丁目・番地・建物名等。私書箱の場合は私書箱番号を含む） |
 | name | 事業所名・私書箱利用者名（漢字） |
-| is_abolished | 廃止済みの個別番号かどうか（0=有効, 1=廃止済み） |
+| is_enabled | 現在有効な個別番号かどうか（1=有効, 0=廃止済み） |
 
 `town`と`detail`をこの順でつなげれば、実際に郵便物を届けるのに必要な住所文字列になります。
-現存する番号だけが欲しい場合は`is_abolished = 0`で絞り込んでください。インデックスがあるため
+現存する番号だけが欲しい場合は`is_enabled = 1`で絞り込んでください。インデックスがあるため
 高速です。
 
 ```sql
 -- 現存する番号だけを検索（インデックスが使われる）
 SELECT pr.name AS pref, c.name AS city, o.town, o.detail, o.name
 FROM offices o
-JOIN prefectures pr ON pr.pref_code = o.pref_code
+JOIN prefectures pr ON pr.prefecture_code = o.prefecture_code
 JOIN cities c ON c.city_code = o.city_code
 WHERE o.zip_code = '1008798'
-  AND o.is_abolished = 0;
+  AND o.is_enabled = 1;
 ```
 
 ## 更新頻度

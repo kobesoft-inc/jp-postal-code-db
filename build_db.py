@@ -4,13 +4,13 @@
 KEN_ALL(住所の郵便番号)とJIGYOSYO(大口事業所個別番号)の2つのデータソースを
 生データの列構成のまま持つのではなく、以下の4テーブルに正規化する。
 
-- prefectures      : 都道府県コード -> 都道府県名
-- cities           : 市区町村コード -> 市区町村名
+- prefectures      : 都道府県コード(prefecture_code) -> 都道府県名
+- cities           : 市区町村コード -> 都道府県コード, 市区町村名
 - postal_codes     : 郵便番号 -> 都道府県コード, 市区町村コード, 町名(住所続き)
 - offices          : 郵便番号(大口事業所個別番号) -> 都道府県コード, 市区町村コード, 町名,
-  番地等, 事業所名, 廃止フラグ(is_abolished)
-  - 廃止された個別番号（修正コード「5」）も除外せずに取り込み、is_abolishedに1を立てる。
-    is_abolishedにインデックスを作成しているため、有効なものだけの絞り込みは高速に行える。
+  番地等, 事業所名, 有効フラグ(is_enabled)
+  - 廃止された個別番号（修正コード「5」）も除外せずに取り込み、is_enabledに0を立てる。
+    is_enabledにインデックスを作成しているため、有効なものだけの絞り込みは高速に行える。
 
 町名はアプリケーションからそのまま住所文字列に使えるよう、以下の正規化を行う
 （postal_codesのみ。officesの町名は個々の事業所固有の住所のため範囲表記が無く、正規化不要）。
@@ -35,40 +35,40 @@ JIGYOSYO_URL = "https://www.post.japanpost.jp/service/search/zipcode/download/of
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS prefectures (
-    pref_code TEXT PRIMARY KEY,
-    name      TEXT NOT NULL,
-    name_kana TEXT NOT NULL
+    prefecture_code TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    name_kana       TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS cities (
-    city_code TEXT PRIMARY KEY,
-    pref_code TEXT NOT NULL REFERENCES prefectures (pref_code),
-    name      TEXT NOT NULL,
-    name_kana TEXT NOT NULL
+    city_code       TEXT PRIMARY KEY,
+    prefecture_code TEXT NOT NULL REFERENCES prefectures (prefecture_code),
+    name            TEXT NOT NULL,
+    name_kana       TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_cities_pref_code ON cities (pref_code);
+CREATE INDEX IF NOT EXISTS idx_cities_prefecture_code ON cities (prefecture_code);
 
 CREATE TABLE IF NOT EXISTS postal_codes (
-    zip_code  TEXT NOT NULL,
-    pref_code TEXT NOT NULL REFERENCES prefectures (pref_code),
-    city_code TEXT NOT NULL REFERENCES cities (city_code),
-    town      TEXT NOT NULL
+    zip_code        TEXT NOT NULL,
+    prefecture_code TEXT NOT NULL REFERENCES prefectures (prefecture_code),
+    city_code       TEXT NOT NULL REFERENCES cities (city_code),
+    town            TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_postal_codes_zip_code ON postal_codes (zip_code);
 CREATE INDEX IF NOT EXISTS idx_postal_codes_city_code ON postal_codes (city_code);
 
 CREATE TABLE IF NOT EXISTS offices (
-    zip_code     TEXT NOT NULL,
-    pref_code    TEXT NOT NULL REFERENCES prefectures (pref_code),
-    city_code    TEXT NOT NULL REFERENCES cities (city_code),
-    town         TEXT NOT NULL,
-    detail       TEXT NOT NULL,
-    name         TEXT NOT NULL,
-    is_abolished INTEGER NOT NULL DEFAULT 0
+    zip_code        TEXT NOT NULL,
+    prefecture_code TEXT NOT NULL REFERENCES prefectures (prefecture_code),
+    city_code       TEXT NOT NULL REFERENCES cities (city_code),
+    town            TEXT NOT NULL,
+    detail          TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    is_enabled      INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_offices_zip_code ON offices (zip_code);
 CREATE INDEX IF NOT EXISTS idx_offices_city_code ON offices (city_code);
-CREATE INDEX IF NOT EXISTS idx_offices_is_abolished ON offices (is_abolished);
+CREATE INDEX IF NOT EXISTS idx_offices_is_enabled ON offices (is_enabled);
 """
 
 # 町名が存在しないことを表す自然言語の記述（KEN_ALLの慣習表記）
@@ -119,33 +119,33 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
         zip_code = row[2]
         pref_kana, city_kana = row[3], row[4]
         pref_name, city_name = row[6], row[7]
-        pref_code, city_code = jis_code[:2], jis_code
+        prefecture_code, city_code = jis_code[:2], jis_code
 
-        prefectures.setdefault(pref_code, (pref_name, pref_kana))
-        cities.setdefault(city_code, (pref_code, city_name, city_kana))
+        prefectures.setdefault(prefecture_code, (pref_name, pref_kana))
+        cities.setdefault(city_code, (prefecture_code, city_name, city_kana))
 
         town = clean_town(row[8])
         key = (zip_code, city_code, town)
         if key in seen_postal_codes:
             continue
         seen_postal_codes.add(key)
-        postal_codes.append((zip_code, pref_code, city_code, town))
+        postal_codes.append((zip_code, prefecture_code, city_code, town))
 
     for row in fetch_csv_rows(jigyosyo_url, encoding="cp932"):
         jis_code = row[0]
         name = row[2]
         pref_name, city_name, town, detail = row[3], row[4], row[5], row[6]
         zip_code = row[7]
-        pref_code, city_code = jis_code[:2], jis_code
-        is_abolished = 1 if row[12] == JIGYOSYO_ABOLISHED_CODE else 0
+        prefecture_code, city_code = jis_code[:2], jis_code
+        is_enabled = 0 if row[12] == JIGYOSYO_ABOLISHED_CODE else 1
 
         # JIGYOSYOには都道府県名・市区町村名のカナが無いため、KEN_ALLに無い
         # コードが例外的に出てきた場合のみ漢字表記をカナ代わりに補う
-        prefectures.setdefault(pref_code, (pref_name, pref_name))
-        cities.setdefault(city_code, (pref_code, city_name, city_name))
+        prefectures.setdefault(prefecture_code, (pref_name, pref_name))
+        cities.setdefault(city_code, (prefecture_code, city_name, city_name))
 
         offices.append(
-            (zip_code, pref_code, city_code, town.strip(), detail.strip(), name.strip(), is_abolished)
+            (zip_code, prefecture_code, city_code, town.strip(), detail.strip(), name.strip(), is_enabled)
         )
 
     conn = sqlite3.connect(db_path)
@@ -157,19 +157,22 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
         conn.execute("DELETE FROM prefectures")
 
         conn.executemany(
-            "INSERT INTO prefectures (pref_code, name, name_kana) VALUES (?, ?, ?)",
+            "INSERT INTO prefectures (prefecture_code, name, name_kana) VALUES (?, ?, ?)",
             [(code, name, kana) for code, (name, kana) in prefectures.items()],
         )
         conn.executemany(
-            "INSERT INTO cities (city_code, pref_code, name, name_kana) VALUES (?, ?, ?, ?)",
-            [(code, pref_code, name, kana) for code, (pref_code, name, kana) in cities.items()],
+            "INSERT INTO cities (city_code, prefecture_code, name, name_kana) VALUES (?, ?, ?, ?)",
+            [
+                (code, prefecture_code, name, kana)
+                for code, (prefecture_code, name, kana) in cities.items()
+            ],
         )
         conn.executemany(
-            "INSERT INTO postal_codes (zip_code, pref_code, city_code, town) VALUES (?, ?, ?, ?)",
+            "INSERT INTO postal_codes (zip_code, prefecture_code, city_code, town) VALUES (?, ?, ?, ?)",
             postal_codes,
         )
         conn.executemany(
-            "INSERT INTO offices (zip_code, pref_code, city_code, town, detail, name, is_abolished) "
+            "INSERT INTO offices (zip_code, prefecture_code, city_code, town, detail, name, is_enabled) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             offices,
         )

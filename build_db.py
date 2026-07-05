@@ -53,16 +53,16 @@ CREATE TABLE IF NOT EXISTS cities (
 CREATE INDEX IF NOT EXISTS idx_cities_prefecture_code ON cities (prefecture_code);
 
 CREATE TABLE IF NOT EXISTS postal_codes (
-    zip_code        TEXT NOT NULL,
+    postal_code     TEXT NOT NULL,
     prefecture_code TEXT NOT NULL REFERENCES prefectures (prefecture_code),
     city_code       TEXT NOT NULL REFERENCES cities (city_code),
     town            TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_postal_codes_zip_code ON postal_codes (zip_code);
+CREATE INDEX IF NOT EXISTS idx_postal_codes_postal_code ON postal_codes (postal_code);
 CREATE INDEX IF NOT EXISTS idx_postal_codes_city_code ON postal_codes (city_code);
 
 CREATE TABLE IF NOT EXISTS offices (
-    zip_code        TEXT NOT NULL,
+    postal_code     TEXT NOT NULL,
     prefecture_code TEXT NOT NULL REFERENCES prefectures (prefecture_code),
     city_code       TEXT NOT NULL REFERENCES cities (city_code),
     town            TEXT NOT NULL,
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS offices (
     name            TEXT NOT NULL,
     is_enabled      INTEGER NOT NULL DEFAULT 1
 );
-CREATE INDEX IF NOT EXISTS idx_offices_zip_code ON offices (zip_code);
+CREATE INDEX IF NOT EXISTS idx_offices_postal_code ON offices (postal_code);
 CREATE INDEX IF NOT EXISTS idx_offices_city_code ON offices (city_code);
 CREATE INDEX IF NOT EXISTS idx_offices_is_enabled ON offices (is_enabled);
 """
@@ -147,7 +147,7 @@ def build_town_candidates(postal_codes):
     最長一致で見つけられるよう長い順に並べたリストとして作る。
     """
     towns_by_city = {}
-    for _zip_code, _pref_code, city_code, town in postal_codes:
+    for _postal_code, _prefecture_code, city_code, town in postal_codes:
         if town:
             towns_by_city.setdefault(city_code, set()).add(town)
 
@@ -200,7 +200,7 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
 
     for row in fetch_csv_rows(ken_all_url):
         jis_code = row[0]
-        zip_code = row[2]
+        postal_code = row[2]
         pref_name, city_name = row[6], row[7]
         prefecture_code, city_code = jis_code[:2], jis_code
 
@@ -208,11 +208,11 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
         cities.setdefault(city_code, (prefecture_code, city_name))
 
         town = clean_town(row[8])
-        key = (zip_code, city_code, town)
+        key = (postal_code, city_code, town)
         if key in seen_postal_codes:
             continue
         seen_postal_codes.add(key)
-        postal_codes.append((zip_code, prefecture_code, city_code, town))
+        postal_codes.append((postal_code, prefecture_code, city_code, town))
 
     town_candidates_by_city = build_town_candidates(postal_codes)
 
@@ -220,7 +220,7 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
         jis_code = row[0]
         name = row[2]
         pref_name, city_name, raw_town, raw_detail = row[3], row[4], row[5], row[6]
-        zip_code = row[7]
+        postal_code = row[7]
         prefecture_code, city_code = jis_code[:2], jis_code
         is_enabled = 0 if row[12] == JIGYOSYO_ABOLISHED_CODE else 1
 
@@ -230,7 +230,7 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
         town, detail = normalize_office_town(
             town_candidates_by_city, city_code, raw_town.strip(), raw_detail.strip()
         )
-        offices.append((zip_code, prefecture_code, city_code, town, detail, name.strip(), is_enabled))
+        offices.append((postal_code, prefecture_code, city_code, town, detail, name.strip(), is_enabled))
 
     conn = sqlite3.connect(db_path)
     try:
@@ -249,11 +249,11 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
             [(code, prefecture_code, name) for code, (prefecture_code, name) in cities.items()],
         )
         conn.executemany(
-            "INSERT INTO postal_codes (zip_code, prefecture_code, city_code, town) VALUES (?, ?, ?, ?)",
+            "INSERT INTO postal_codes (postal_code, prefecture_code, city_code, town) VALUES (?, ?, ?, ?)",
             postal_codes,
         )
         conn.executemany(
-            "INSERT INTO offices (zip_code, prefecture_code, city_code, town, detail, name, is_enabled) "
+            "INSERT INTO offices (postal_code, prefecture_code, city_code, town, detail, name, is_enabled) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             offices,
         )

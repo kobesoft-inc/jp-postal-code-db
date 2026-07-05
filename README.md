@@ -43,19 +43,19 @@ curl -L -o jp_postal_code.db \
 
 | カラム | 内容 |
 | --- | --- |
-| zip_code | 郵便番号（7桁、ハイフンなし） |
+| postal_code | 郵便番号（7桁、ハイフンなし） |
 | prefecture_code | 都道府県コード（`prefectures.prefecture_code` を参照） |
 | city_code | 市区町村コード（`cities.city_code` を参照） |
 | town | 町名・住所続き（正規化済み。町名が存在しない場合は空文字列） |
 
-`zip_code`・`city_code`にインデックスがあるため、どちらのキーでの検索も高速です。
+`postal_code`・`city_code`にインデックスがあるため、どちらのキーでの検索も高速です。
 
 ```sql
 SELECT pr.name AS pref, c.name AS city, p.town
 FROM postal_codes p
 JOIN prefectures pr ON pr.prefecture_code = p.prefecture_code
 JOIN cities c ON c.city_code = p.city_code
-WHERE p.zip_code = '1000001';
+WHERE p.postal_code = '1000001';
 -- 東京都 千代田区 千代田
 ```
 
@@ -75,7 +75,7 @@ WHERE p.zip_code = '1000001';
 
 | カラム | 内容 |
 | --- | --- |
-| zip_code | 郵便番号（7桁、ハイフンなし。同じ番号が複数行に出てくることがある） |
+| postal_code | 郵便番号（7桁、ハイフンなし。同じ番号が複数行に出てくることがある） |
 | prefecture_code | 都道府県コード（`prefectures.prefecture_code` を参照） |
 | city_code | 市区町村コード（`cities.city_code` を参照） |
 | town | 町名（`postal_codes.town`の表記に正規化済み。下記参照） |
@@ -100,7 +100,7 @@ SELECT pr.name AS pref, c.name AS city, o.town, o.detail, o.name
 FROM offices o
 JOIN prefectures pr ON pr.prefecture_code = o.prefecture_code
 JOIN cities c ON c.city_code = o.city_code
-WHERE o.zip_code = '1008798'
+WHERE o.postal_code = '1008798'
   AND o.is_enabled = 1;
 ```
 

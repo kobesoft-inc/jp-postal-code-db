@@ -76,6 +76,14 @@ NO_TOWN_PATTERNS = [
     re.compile(r".*の次に.*番地.*くる場合$"),
 ]
 
+# 番地範囲で郵便番号を区分する記述（例: 「小菅村の次に１〜６６３番地がくる場合」）
+BANCHI_RANGE_PATTERN = re.compile(
+    r".+の次に([０-９0-9]+)(?:[〜～ー―-])([０-９0-9]+)番地.*くる場合$"
+)
+BANCHI_FROM_PATTERN = re.compile(
+    r".+の次に([０-９0-9]+)番地以降.*くる場合$"
+)
+
 # 丁目・番地の範囲や補足を表す括弧書き（例: （１〜１９丁目）, （その他）, （次のビルを除く））
 PAREN_PATTERN = re.compile(r"[（(][^（）()]*[）)]")
 PAREN_CONTENT_PATTERN = re.compile(r"[（(]([^（）()]*)[）)]")
@@ -93,6 +101,18 @@ def clean_town(raw_town):
 def extract_detail(raw_town):
     """町名欄の括弧書き（複数あれば「、」で連結）を取り出す。無ければ空文字列。"""
     return "、".join(PAREN_CONTENT_PATTERN.findall(raw_town))
+
+
+def extract_banchi_range_detail(raw_town):
+    """「○○の次にN〜M番地がくる場合」から番地範囲をdetailとして抽出する。"""
+    town = raw_town.strip()
+    m = BANCHI_RANGE_PATTERN.match(town)
+    if m:
+        return f"{m.group(1)}〜{m.group(2)}番地"
+    m = BANCHI_FROM_PATTERN.match(town)
+    if m:
+        return f"{m.group(1)}番地以降"
+    return ""
 
 
 def fetch_csv_text(url, encoding="utf-8"):
@@ -138,7 +158,10 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
             continue
         seen_postal_codes.add(key)
 
-        detail = extract_detail(raw_town) if town else ""
+        if town:
+            detail = extract_detail(raw_town)
+        else:
+            detail = extract_banchi_range_detail(raw_town)
         details_by_town.setdefault((city_code, town), {})[postal_code] = detail
         postal_codes.append((postal_code, prefecture_code, city_code, town, detail))
 

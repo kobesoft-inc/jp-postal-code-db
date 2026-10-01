@@ -2,8 +2,8 @@ name: Update postal code database
 
 on:
   schedule:
-    # 毎日 00:00 UTC (= 09:00 JST)
-    - cron: "0 0 * * *"
+    # 毎月3日 00:17 UTC (= 09:17 JST)。日本郵便は月末に更新するので、その後に1回だけチェックする
+    - cron: "17 0 3 * *"
   workflow_dispatch:
     inputs:
       force:

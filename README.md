@@ -1,22 +1,22 @@
 # jp-postal-code-db
 
 日本郵便が公開している郵便番号データを、そのまま使えるSQLite3データベースにして配布しています。
-毎日自動チェックし、元データが更新されていれば追随します（[GitHub Actions](.github/workflows/update-db.yml)）。
+毎月1回自動チェックし、元データが更新されていれば追随します（[GitHub Actions](.github/workflows/update-db.yml)）。
 
 - **住所の郵便番号**（KEN_ALL）→ `postal_codes` テーブル
 - **事業所個別番号**（JIGYOSYO。大口事業所・私書箱に割り当てられる専用の郵便番号）→ `offices` テーブル
 
 ## ダウンロード
 
-以下のURLから常に最新版を取得できます（[Releases](https://github.com/kobesoft-inc/jp-postal-code-db/releases)）。
+以下のURLから常に最新版を取得できます（[Releases](https://github.com/kobesoft-labs/jp-postal-code-db/releases)）。
 
 ```
-https://github.com/kobesoft-inc/jp-postal-code-db/releases/latest/download/jp_postal_code.db
+https://github.com/kobesoft-labs/jp-postal-code-db/releases/latest/download/jp_postal_code.db
 ```
 
 ```bash
 curl -L -o jp_postal_code.db \
-  https://github.com/kobesoft-inc/jp-postal-code-db/releases/latest/download/jp_postal_code.db
+  https://github.com/kobesoft-labs/jp-postal-code-db/releases/latest/download/jp_postal_code.db
 ```
 
 ## テーブル構成
@@ -113,8 +113,9 @@ WHERE o.postal_code = '1008798'
 
 ## 更新頻度
 
-毎日09:00 JSTに、日本郵便側のデータが更新されているかをチェックし、更新があった場合のみ
-DBを再生成して最新版をリリースします（更新が無い日は何もしません）。過去のリリースは残さず、
+毎月3日 09:17 JSTに、日本郵便側のデータが更新されているかをチェックし、更新があった場合のみ
+DBを再生成して最新版をリリースします（更新が無ければ何もしません）。日本郵便は月末に更新するため、
+月1回のチェックで追随できます。過去のリリースは残さず、
 常に最新版のみを公開しています。
 
 ## ライセンス
